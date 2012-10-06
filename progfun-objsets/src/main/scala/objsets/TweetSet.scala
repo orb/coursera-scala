@@ -8,24 +8,27 @@ class Tweet(val user: String, val text: String, val retweets: Int) {
   override def toString: String =
     "User: " + user + "\n" +
     "Text: " + text + " [" + retweets + "]"
-
 }
 
-abstract class TweetSet {
 
-  /** This method takes a predicate and returns a subset of all the elements
-   *  in the original set for which the predicate is true.
-   */
-  def filter(p: Tweet => Boolean): TweetSet = ???
+abstract class TweetSet
+{
+  def better_filter(p: Tweet => Boolean): TweetSet
+  
+  def filter(p: Tweet => Boolean): TweetSet = 
+    filter0(p, new Empty)
+    
   def filter0(p: Tweet => Boolean, accu: TweetSet): TweetSet
 
-  def union(that: TweetSet): TweetSet = ???
+  def union(that: TweetSet): TweetSet = 
+    if (that.isEmpty) 
+      this
+    else
+      this.incl(that.head).union(that.tail)       
 
   // Hint: the method "remove" on TweetSet will be very useful.
-  def ascendingByRetweet: Trending = ???
+  def ascendingByRetweet: Trending
 
-  // The following methods are provided for you, and do not have to be changed
-  // -------------------------------------------------------------------------
   def incl(x: Tweet): TweetSet
   def contains(x: Tweet): Boolean
   def isEmpty: Boolean
@@ -50,39 +53,57 @@ abstract class TweetSet {
 
   def findMin: Tweet =
     this.tail.findMin0(this.head)
-  // -------------------------------------------------------------------------
 }
 
-class Empty extends TweetSet {
+class Empty extends TweetSet 
+{  
+  def better_filter(p: Tweet => Boolean) = this
+     
+  def filter0(p: Tweet => Boolean, accu: TweetSet): TweetSet = accu
 
-  def filter0(p: Tweet => Boolean, accu: TweetSet): TweetSet = ???
-
-  // The following methods are provided for you, and do not have to be changed
-  // -------------------------------------------------------------------------
+  def ascendingByRetweet: Trending = new EmptyTrending
+  
+  
   def contains(x: Tweet): Boolean = false
   def incl(x: Tweet): TweetSet = new NonEmpty(x, new Empty, new Empty)
   def isEmpty = true
   def head = throw new Exception("Empty.head")
   def tail = throw new Exception("Empty.tail")
   def remove(tw: Tweet): TweetSet = this
-  // -------------------------------------------------------------------------
 }
 
 class NonEmpty(elem: Tweet, left: TweetSet, right: TweetSet) extends TweetSet {
+  def better_filter(p: Tweet => Boolean) = 
+    if (p(elem))
+        new NonEmpty(elem, left.better_filter(p), right.better_filter(p))
+    else
+        left.better_filter(p).union(right.better_filter(p))
+    
+  def filter0(p: Tweet => Boolean, accu: TweetSet): TweetSet = {
+    val newaccu = if (p(elem)) accu.incl(elem) else accu    
+    right.filter0(p, left.filter0(p, newaccu))
+  }
 
-  def filter0(p: Tweet => Boolean, accu: TweetSet): TweetSet = ???
-
-  // The following methods are provided for you, and do not have to be changed
-  // -------------------------------------------------------------------------
+  def ascendingByRetweet: Trending = {
+    val min = findMin
+    new NonEmptyTrending(min, remove(min).ascendingByRetweet)
+  }
+  
   def contains(x: Tweet): Boolean =
-    if (x.text < elem.text) left.contains(x)
-    else if (elem.text < x.text) right.contains(x)
-    else true
+    if (x.text < elem.text) 
+      left.contains(x)
+    else if (elem.text < x.text) 
+      right.contains(x)
+    else 
+      true
 
   def incl(x: Tweet): TweetSet = {
-    if (x.text < elem.text) new NonEmpty(elem, left.incl(x), right)
-    else if (elem.text < x.text) new NonEmpty(elem, left, right.incl(x))
-    else this
+    if (x.text < elem.text) 
+      new NonEmpty(elem, left.incl(x), right)
+    else if (elem.text < x.text) 
+      new NonEmpty(elem, left, right.incl(x))
+    else 
+      this
   }
 
   def isEmpty = false
@@ -90,10 +111,12 @@ class NonEmpty(elem: Tweet, left: TweetSet, right: TweetSet) extends TweetSet {
   def tail = if (left.isEmpty) right else new NonEmpty(elem, left.tail, right)
 
   def remove(tw: Tweet): TweetSet =
-    if (tw.text < elem.text) new NonEmpty(elem, left.remove(tw), right)
-    else if (elem.text < tw.text) new NonEmpty(elem, left, right.remove(tw))
-    else left.union(right)
-  // -------------------------------------------------------------------------
+    if (tw.text < elem.text) 
+      new NonEmpty(elem, left.remove(tw), right)
+    else if (elem.text < tw.text) 
+      new NonEmpty(elem, left, right.remove(tw))
+    else 
+      left.union(right)
 }
 
 
@@ -137,16 +160,20 @@ object GoogleVsApple {
   
   val apple = List("ios", "iOS", "iphone", "iPhone", "ipad", "iPad")
 
-  val googleTweets: TweetSet = ???
-
-  val appleTweets: TweetSet = ???
-
-  // Q: from both sets, what is the tweet with highest #retweets?
-  val trending: Trending = ???
+  def matchesKeyword(text:String)(keyword:String) = text.contains(keyword)
+  def tweetInList(keywords: List[String])(tweet: Tweet) : Boolean =    
+    !keywords.filter(matchesKeyword(tweet.text)).isEmpty
+  
+  val googleTweets: TweetSet = TweetReader.allTweets.filter(tweetInList(google))
+  val appleTweets: TweetSet  = TweetReader.allTweets.filter(tweetInList(apple))
+  val combined = googleTweets.union(appleTweets)
+  
+  val trending: Trending = combined.ascendingByRetweet  
 }
 
 object Main extends App {
   // Some help printing the results:
-  // println("RANKED:")
-  // GoogleVsApple.trending foreach println
+  println("RANKED:")
+  GoogleVsApple.trending foreach println
+  println("--done")
 }
